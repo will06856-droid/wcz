@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>A星迷宫寻路可视化系统</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1f2937; background: #eef3f1; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; padding: 24px; }
+    .shell { width: min(100%, 1180px); margin: auto; }
+    h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 2.6rem); }
+    h2, h3 { margin: 0 0 14px; }
+    h2 { font-size: 1.1rem; } h3 { margin-top: 22px; font-size: 1rem; }
+    .subtitle { margin: 0 0 20px; color: #64748b; }
+    .layout { display: grid; grid-template-columns: minmax(260px, 310px) minmax(0, 1fr); gap: 22px; align-items: start; }
+    .panel, .board-panel { padding: 22px; border: 1px solid #d8e2dc; border-radius: 18px; background: #fff; box-shadow: 0 16px 45px rgba(31,41,55,.08); }
+    .group { margin-bottom: 18px; }
+    button, select, input { font: inherit; }
+    button { border: 0; border-radius: 9px; padding: 10px 12px; color: #fff; background: #2563eb; font-weight: 700; cursor: pointer; }
+    button:hover { background: #1d4ed8; } button:disabled { cursor: wait; opacity: .55; }
+    .mode-grid, .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .mode { color: #334155; background: #e2e8f0; font-size: .9rem; }
+    .mode.active, .mode:hover { color: #fff; background: #0f766e; }
+    .actions button { color: #334155; background: #e2e8f0; }
+    .actions button:hover { background: #cbd5e1; }
+    .field { display: grid; gap: 7px; color: #475569; font-size: .92rem; }
+    select { width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px; background: #fff; }
+    .range { display: flex; align-items: center; gap: 10px; } .range input { flex: 1; } .range-value { min-width: 55px; color: #0f766e; font-weight: 700; text-align: right; }
+    #solve { width: 100%; margin-top: 12px; background: #0f766e; } #solve:hover { background: #115e59; }
+    .message { min-height: 22px; margin: 12px 0 0; color: #64748b; font-size: .9rem; }
+    .message.error { color: #b91c1c; } .message.success { color: #15803d; }
+    .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; padding: 0; list-style: none; color: #475569; font-size: .85rem; }
+    .legend li { display: flex; align-items: center; gap: 7px; } .legend i { width: 16px; height: 16px; border: 1px solid #cbd5e1; border-radius: 4px; }
+    .empty { background: #fff; } .obstacle { background: #334155; } .start-color { background: #22c55e; } .end-color { background: #ef4444; } .visited-color { background: #bfdbfe; } .path-color { background: #facc15; }
+    .board-title { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 14px; } .hint { color: #64748b; font-size: .86rem; text-align: right; }
+    .maze { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); width: min(100%, 700px); aspect-ratio: 1; margin: auto; overflow: hidden; border: 2px solid #94a3b8; border-radius: 8px; background: #cbd5e1; touch-action: none; user-select: none; }
+    .cell { min-width: 0; min-height: 0; padding: 0; border: 1px solid #dbe4ed; border-radius: 0; background: #fff; }
+    .cell:hover { outline: 2px solid #38bdf8; outline-offset: -2px; }
+    .cell.obstacle { background: #334155; } .cell.visited { background: #bfdbfe; } .cell.path { background: #facc15; } .cell.start { background: #22c55e; } .cell.end { background: #ef4444; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 18px; }
+    .stat { padding: 11px; border-radius: 9px; background: #f8fafc; } .stat small { display: block; margin-bottom: 4px; color: #64748b; } .stat strong { display: block; overflow-wrap: anywhere; }
+    .result { text-align: center; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .panel { order: 2; } .board-panel { order: 1; } }
+    @media (max-width: 500px) { body { padding: 12px; } .panel, .board-panel { padding: 16px; border-radius: 14px; } .board-title { display: block; } .hint { margin-top: 5px; text-align: left; } .stats { grid-template-columns: 1fr 1fr; } .legend { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <h1>A星迷宫寻路可视化系统</h1>
+    <p class="subtitle">在 20×20 网格中观察 A星算法和广度优先搜索如何寻找最短路径。</p>
+
+    <div class="layout">
+      <aside class="panel">
+        <h2>控制区域</h2>
+        <div class="group">
+          <h3>操作模式</h3>
+          <div class="mode-grid">
+            <button class="mode active" type="button" data-mode="start">设置起点</button>
+            <button class="mode" type="button" data-mode="end">设置终点</button>
+            <button class="mode" type="button" data-mode="draw">绘制障碍</button>
+            <button class="mode" type="button" data-mode="erase">擦除障碍</button>
+          </div>
+        </div>
+        <div class="group">
+          <label class="field" for="algorithm">寻路算法
+            <select id="algorithm"><option value="astar">A星算法</option><option value="bfs">广度优先搜索</option></select>
+          </label>
+        </div>
+        <div class="group">
+          <label class="field" for="speed">动画速度
+            <span class="range"><input id="speed" type="range" min="10" max="150" step="5" value="35"><span id="speed-value" class="range-value">35 ms</span></span>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="random-maze" type="button">随机迷宫</button>
+          <button id="clear-map" type="button">清空地图</button>
+        </div>
+        <button id="solve" type="button">开始寻路</button>
+        <p id="control-message" class="message" aria-live="polite">当前模式：设置起点</p>
+
+        <h3>颜色说明</h3>
+        <ul class="legend">
+          <li><i class="empty"></i>空白格</li><li><i class="obstacle"></i>障碍物</li>
+          <li><i class="start-color"></i>起点</li><li><i class="end-color"></i>终点</li>
+          <li><i class="visited-color"></i>已搜索</li><li><i class="path-color"></i>最终路径</li>
+        </ul>
+      </aside>
+
+      <section class="board-panel">
+        <div class="board-title"><h2>20×20 迷宫地图</h2><span class="hint">拖动鼠标连续绘制或擦除障碍</span></div>
+        <div id="maze" class="maze" role="grid" aria-label="20乘20迷宫地图"></div>
+        <div class="stats">
+          <div class="stat"><small>算法</small><strong id="stat-algorithm">—</strong></div>
+          <div class="stat"><small>是否找到路径</small><strong id="stat-found">—</strong></div>
+          <div class="stat"><small>路径长度</small><strong id="stat-path">—</strong></div>
+          <div class="stat"><small>搜索节点 / 后端耗时</small><strong id="stat-visited">—</strong></div>
+        </div>
+        <p id="result-message" class="message result" aria-live="polite"></p>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const SIZE = 20;
+    const maze = document.querySelector("#maze");
+    const algorithm = document.querySelector("#algorithm");
+    const speed = document.querySelector("#speed");
+    const speedValue = document.querySelector("#speed-value");
+    const solveButton = document.querySelector("#solve");
+    const randomButton = document.querySelector("#random-maze");
+    const clearButton = document.querySelector("#clear-map");
+    const controlMessage = document.querySelector("#control-message");
+    const resultMessage = document.querySelector("#result-message");
+    const statAlgorithm = document.querySelector("#stat-algorithm");
+    const statFound = document.querySelector("#stat-found");
+    const statPath = document.querySelector("#stat-path");
+    const statVisited = document.querySelector("#stat-visited");
+    const modeButtons = Array.from(document.querySelectorAll(".mode"));
+
+    let grid = emptyGrid();
+    let start = { row: 0, column: 0 };
+    let end = { row: SIZE - 1, column: SIZE - 1 };
+    let mode = "start";
+    let pointerDown = false;
+    let animating = false;
+    let visited = new Set();
+    let path = new Set();
+    const cells = [];
+
+    function emptyGrid() {
+      return Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+    }
+
+    function key(row, column) {
+      return row + "," + column;
+    }
+
+    function samePoint(first, second) {
+      return first.row === second.row && first.column === second.column;
+    }
+
+    function render() {
+      for (let row = 0; row < SIZE; row += 1) {
+        for (let column = 0; column < SIZE; column += 1) {
+          const cell = cells[row][column];
+          const positionKey = key(row, column);
+          cell.className = "cell";
+          if (grid[row][column] === 1) cell.classList.add("obstacle");
+          if (visited.has(positionKey)) cell.classList.add("visited");
+          if (path.has(positionKey)) cell.classList.add("path");
+          if (start.row === row && start.column === column) cell.classList.add("start");
+          if (end.row === row && end.column === column) cell.classList.add("end");
+        }
+      }
+    }
+
+    function clearSearch() {
+      visited = new Set();
+      path = new Set();
+      render();
+    }
+
+    function setMessage(element, message, type) {
+      element.className = ("message " + (type || "")).trim();
+      element.textContent = message;
+    }
+
+    function buildGrid() {
+      for (let row = 0; row < SIZE; row += 1) {
+        cells[row] = [];
+        for (let column = 0; column < SIZE; column += 1) {
+          const cell = document.createElement("button");
+          cell.type = "button";
+          cell.className = "cell";
+          cell.setAttribute("role", "gridcell");
+          cell.setAttribute("aria-label", "第" + (row + 1) + "行第" + (column + 1) + "列");
+          cell.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            pointerDown = true;
+            applyCell(row, column);
+          });
+          cell.addEventListener("pointerenter", () => {
+            if (pointerDown && (mode === "draw" || mode === "erase")) applyCell(row, column);
+          });
+          cells[row][column] = cell;
+          maze.appendChild(cell);
+        }
+      }
+      render();
+    }
+
+    function setMode(nextMode) {
+      if (animating) return;
+      mode = nextMode;
+      modeButtons.forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
+      const names = { start: "设置起点", end: "设置终点", draw: "绘制障碍", erase: "擦除障碍" };
+      setMessage(controlMessage, "当前模式：" + names[mode]);
+    }
+
+    function applyCell(row, column) {
+      if (animating) return;
+      const point = { row: row, column: column };
+      if (mode === "start") {
+        if (samePoint(point, end)) return setMessage(controlMessage, "起点不能与终点重合", "error");
+        start = point;
+        clearSearch();
+        setMessage(controlMessage, "起点已设置为（" + (row + 1) + ", " + (column + 1) + "）", "success");
+      } else if (mode === "end") {
+        if (samePoint(point, start)) return setMessage(controlMessage, "终点不能与起点重合", "error");
+        end = point;
+        clearSearch();
+        setMessage(controlMessage, "终点已设置为（" + (row + 1) + ", " + (column + 1) + "）", "success");
+      } else if (mode === "draw") {
+        if (!samePoint(point, start) && !samePoint(point, end)) {
+          grid[row][column] = 1;
+          clearSearch();
+        }
+      } else {
+        grid[row][column] = 0;
+        clearSearch();
+      }
+    }
+
+    function resetStats() {
+      statAlgorithm.textContent = "—";
+      statFound.textContent = "—";
+      statPath.textContent = "—";
+      statVisited.textContent = "—";
+    }
+
+    function randomMaze() {
+      if (animating) return;
+      const ratio = 0.2 + Math.random() * 0.05;
+      grid = emptyGrid();
+      for (let row = 0; row < SIZE; row += 1) {
+        for (let column = 0; column < SIZE; column += 1) {
+          const point = { row: row, column: column };
+          if (!samePoint(point, start) && !samePoint(point, end)) grid[row][column] = Math.random() < ratio ? 1 : 0;
+        }
+      }
+      clearSearch();
+      setMessage(resultMessage, "");
+      setMessage(controlMessage, "已生成约" + Math.round(ratio * 100) + "%障碍物");
+    }
+
+    function clearMap() {
+      if (animating) return;
+      grid = emptyGrid();
+      start = { row: 0, column: 0 };
+      end = { row: SIZE - 1, column: SIZE - 1 };
+      clearSearch();
+      resetStats();
+      setMode("start");
+      setMessage(resultMessage, "");
+      setMessage(controlMessage, "地图已清空，起点和终点已恢复默认位置", "success");
+    }
+
+    function disableControls(disabled) {
+      modeButtons.forEach((button) => { button.disabled = disabled; });
+      algorithm.disabled = disabled;
+      speed.disabled = disabled;
+      randomButton.disabled = disabled;
+      clearButton.disabled = disabled;
+    }
+
+    function wait(milliseconds) {
+      return new Promise((resolve) => setTimeout(resolve, milliseconds));
+    }
+
+    async function showVisited(nodes) {
+      for (const node of nodes) {
+        visited.add(key(node[0], node[1]));
+        render();
+        await wait(Number(speed.value));
+      }
+    }
+
+    async function showPath(nodes) {
+      for (const node of nodes) {
+        path.add(key(node[0], node[1]));
+        render();
+        await wait(Math.max(20, Number(speed.value) * 1.5));
+      }
+    }
+
+    async function solve() {
+      if (animating) return;
+      animating = true;
+      solveButton.disabled = true;
+      disableControls(true);
+      clearSearch();
+      resetStats();
+      setMessage(resultMessage, "正在请求后端计算...");
+
+      const payload = {
+        grid: grid.map((row) => Array.from(row)),
+        start: [start.row, start.column],
+        end: [end.row, end.column],
+        algorithm: algorithm.value,
+      };
+
+      try {
+        const response = await fetch("/api/solve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || data.message || "HTTP " + response.status);
+
+        statAlgorithm.textContent = data.algorithm === "astar" ? "A星算法" : "广度优先搜索";
+        statFound.textContent = data.success ? "是" : "否";
+        statPath.textContent = data.path_length + " 步";
+        statVisited.textContent = data.visited_count + " / " + data.elapsed_ms + " ms";
+        setMessage(resultMessage, "正在播放搜索过程...");
+        await showVisited(data.visited || []);
+
+        if (data.success) {
+          await showPath(data.path || []);
+          setMessage(resultMessage, "寻路完成，找到长度为 " + data.path_length + " 的路径。", "success");
+        } else {
+          setMessage(resultMessage, "未找到可行路径，请调整障碍物后重试。", "error");
+        }
+      } catch (error) {
+        setMessage(resultMessage, "寻路请求失败：" + error.message, "error");
+      } finally {
+        animating = false;
+        solveButton.disabled = false;
+        disableControls(false);
+      }
+    }
+
+    modeButtons.forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
+    speed.addEventListener("input", () => { speedValue.textContent = speed.value + " ms"; });
+    randomButton.addEventListener("click", randomMaze);
+    clearButton.addEventListener("click", clearMap);
+    solveButton.addEventListener("click", solve);
+    document.addEventListener("pointerup", () => { pointerDown = false; });
+    buildGrid();
+  </script>
+</body>
+</html>
